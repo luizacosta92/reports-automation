@@ -54,7 +54,7 @@ def test_reads_xlsx_with_metadata_and_tolerance_columns():
 
 
 def test_reads_official_dados_xlsx():
-    file_path = Path(__file__).resolve().parent / "dados.xlsx"
+    file_path = Path(__file__).resolve().parent / "fixtures" / "dados.xlsx"
 
     assert file_path.exists(), (
         f"Planilha oficial não encontrada: {file_path}"

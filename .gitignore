@@ -25,6 +25,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 node_modules/
+frontend-calibra/dist/
 .env
 
 # Build do front-end (gerado pelo infra/deploy.ps1)
