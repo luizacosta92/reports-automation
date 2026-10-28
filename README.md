@@ -119,8 +119,7 @@ Instale as dependências:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -e .
-.\.venv\Scripts\python.exe -m pip install pytest
+.\.venv\Scripts\python.exe -m pip install -e ".[test]"
 ```
 
 Inicie a API:
@@ -148,8 +147,25 @@ Abra outro terminal e acesse a pasta do frontend:
 
 ```powershell
 cd frontend-calibra
-npm install
+npm ci
 npm run dev
+```
+
+Por padrão, o frontend usa `http://127.0.0.1:8000`. Para apontar para uma API
+publicada ou para outra instância local, defina `VITE_API_URL` antes de iniciar
+o Vite ou de gerar o build:
+
+```powershell
+$env:VITE_API_URL = "https://sua-api.example.com"
+npm run dev
+```
+
+No deploy com frontend e API na mesma origem, use uma URL vazia para que as
+requisições sejam relativas:
+
+```powershell
+$env:VITE_API_URL = ""
+npm run build
 ```
 
 Abra no navegador o endereço informado pelo Vite, normalmente:
@@ -250,7 +266,8 @@ O status resultante e o parecer final são determinados pelas regras implementad
 
 ## Testes Automatizados
 
-O projeto possui testes automatizados para a lógica metrológica e a leitura de planilhas.
+O projeto possui testes automatizados para a API HTTP, a lógica metrológica e a
+leitura de planilhas.
 
 Para executar:
 
@@ -258,13 +275,19 @@ Para executar:
 .\.venv\Scripts\python.exe -m pytest -v
 ```
 
-Durante o desenvolvimento, foram executados **5 testes com sucesso**, cobrindo:
+Os testes cobrem:
 
 - Cálculo da média, erro sistemático, LEA e aprovação.
 - Reprovação quando existe um ponto fora da tolerância.
 - Leitura de XLSX com metadados e colunas de tolerância.
-- Leitura da planilha `dados.xlsx`.
 - Rejeição de conteúdo que não corresponde a um arquivo XLSX válido.
+- Resposta do endpoint `/health`.
+- Upload de planilhas aprovadas e reprovadas pela API.
+- Rejeição de extensão inválida e ausência do campo `file`.
+
+O caso que lê a planilha operacional `tests/dados.xlsx` depende desse arquivo
+de teste estar presente no repositório. A validação da AV04 deve incluir a
+revisão desse fixture antes do merge.
 
 A execução dos testes unitários não substitui um teste E2E completo entre navegador, frontend, API e arquivo Excel.
 

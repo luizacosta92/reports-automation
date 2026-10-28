@@ -13,6 +13,8 @@ import {
   XCircle,
 } from "lucide-react";
 
+const API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
+
 function formatNumber(value) {
   if (value === null || value === undefined || value === "") return "—";
   return new Intl.NumberFormat("pt-BR", {
@@ -71,7 +73,7 @@ export default function App() {
       formData.append("file", file);
 
       const response = await fetch(
-        "http://127.0.0.1:8000/api/v1/calibrations/process",
+        `${API_URL}/api/v1/calibrations/process`,
         {
           method: "POST",
           body: formData,
@@ -99,7 +101,7 @@ export default function App() {
     } catch (err) {
       setError(
         err instanceof TypeError
-          ? "Não foi possível conectar à API. Confirme se o back-end está rodando em http://127.0.0.1:8000."
+          ? `Não foi possível conectar à API. Confirme se o back-end está disponível em ${API_URL}.`
           : err.message || "Ocorreu um erro inesperado durante o processamento."
       );
     } finally {
