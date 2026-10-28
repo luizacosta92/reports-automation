@@ -1,0 +1,4 @@
+# gerado pelo prepare.py / sam build
+api_src/app/
+.aws-sam/
+samconfig.toml

@@ -1,0 +1,241 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Reports Automation (Schulz) - PoC dentro do Free Tier.
+  Front-end React em S3 + CloudFront; API FastAPI em uma funcao Lambda atras de API Gateway HTTP.
+  O CloudFront serve o site e repassa /api/* para a API (mesma origem, sem problema de CORS).
+
+Parameters:
+  UseCloudFront:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      true = site em S3 privado + CloudFront (HTTPS, /api na mesma origem). Precisa de permissao para criar
+      CloudFront OAC (o AWS Academy Learner Lab NAO permite). false = site em S3 como website publico (HTTP) e API chamada direto.
+  CreateBudget:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Cria o alerta de orcamento (AWS Budgets). No AWS Academy Learner Lab costuma nao ser permitido, entao o padrao e false.
+  AlertEmail:
+    Type: String
+    Default: nao-informado@example.com
+    Description: E-mail que recebe os alertas de orcamento (so usado se CreateBudget=true).
+  BudgetLimitUsd:
+    Type: Number
+    Default: 1
+    Description: Limite mensal do orcamento em USD (so serve de gatilho de alerta, a meta e custo zero).
+
+Conditions:
+  UseBudget: !Equals [!Ref CreateBudget, 'true']
+  UseCF: !Equals [!Ref UseCloudFront, 'true']
+  NoCF: !Not [!Condition UseCF]
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [x86_64]
+    Timeout: 30
+    MemorySize: 512
+
+Resources:
+
+  # ---------------------------------------------------------------- API (backend)
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      # Freio de custo/abuso: no maximo 5 req/s (rajada de 10) em todas as rotas.
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 10
+        ThrottlingRateLimit: 5
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: API FastAPI (Reports Automation) executando em Lambda via Mangum
+      CodeUri: api_src/
+      Handler: lambda_handler.handler
+      # Learner Lab: nao e permitido criar funcoes IAM, entao usamos a LabRole que ja existe na conta.
+      # Em uma conta AWS comum, troque esta linha por Policies: [AWSLambdaBasicExecutionRole] (o SAM cria o role).
+      Role: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/LabRole
+      Environment:
+        Variables:
+          # Sem CloudFront o site e a API ficam em enderecos diferentes: a API precisa liberar (CORS) o endereco do site.
+          ALLOWED_ORIGIN: !If [UseCF, '', !GetAtt FrontendBucket.WebsiteURL]
+      Events:
+        Proxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: ANY
+
+  # Sem isso os logs ficam guardados para sempre e podem passar da cota gratuita.
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ApiFunction}
+      RetentionInDays: 14
+
+  # ---------------------------------------------------------------- Front-end (site estatico)
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: !If [UseCF, true, false]
+        BlockPublicPolicy: !If [UseCF, true, false]
+        IgnorePublicAcls: !If [UseCF, true, false]
+        RestrictPublicBuckets: !If [UseCF, true, false]
+      WebsiteConfiguration: !If
+        - UseCF
+        - !Ref AWS::NoValue
+        - IndexDocument: index.html
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Condition: UseCF
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: UseCF
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${AWS::StackName} - site + API
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: site-s3
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt OriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+          - Id: api-gateway
+            DomainName: !Sub ${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              HTTPSPort: 443
+        DefaultCacheBehavior:
+          TargetOriginId: site-s3
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6   # Managed-CachingOptimized
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api-gateway
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachePolicyId: 4135ea2d-6df8-4a3f-a2b5-4ff50a3a3c8b            # Managed-CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac    # Managed-AllViewerExceptHostHeader
+          - PathPattern: /health
+            TargetOriginId: api-gateway
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachePolicyId: 4135ea2d-6df8-4a3f-a2b5-4ff50a3a3c8b
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+
+  # Libera a leitura do bucket SOMENTE para esta distribuicao do CloudFront.
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: UseCF
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${FrontendBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+
+  # Sem CloudFront: leitura publica do site estatico (so GetObject; ninguem consegue escrever/listar).
+  FrontendBucketPolicyPublic:
+    Type: AWS::S3::BucketPolicy
+    Condition: NoCF
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadSite
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub ${FrontendBucket.Arn}/*
+
+  # ---------------------------------------------------------------- Custos
+  CostBudget:
+    Type: AWS::Budgets::Budget
+    Condition: UseBudget
+    Properties:
+      Budget:
+        BudgetName: !Sub ${AWS::StackName}-custo-mensal
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref BudgetLimitUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        # Avisa a partir de US$ 0,10 gastos (minimo aceito pelo Budgets) (o que "nao deveria" acontecer na PoC)
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 0.1
+            ThresholdType: ABSOLUTE_VALUE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+
+Outputs:
+  SiteUrl:
+    Description: Endereco publico do site
+    Value: !If
+      - UseCF
+      - !Sub https://${Distribution.DomainName}
+      - !GetAtt FrontendBucket.WebsiteURL
+  FrontendBucketName:
+    Description: Bucket onde o build do front-end e publicado
+    Value: !Ref FrontendBucket
+  DistributionId:
+    Description: ID da distribuicao CloudFront (vazio sem CloudFront)
+    Value: !If [UseCF, !Ref Distribution, 'none']
+  ApiDirectUrl:
+    Description: URL da API (API Gateway). Sem CloudFront, o front usa esta URL
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+  ApiUrlForFrontend:
+    Description: Valor de VITE_API_URL no build do front-end
+    Value: !If [UseCF, '', !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com']
