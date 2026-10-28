@@ -101,7 +101,7 @@ export default function App() {
     } catch (err) {
       setError(
         err instanceof TypeError
-          ? `Não foi possível conectar à API. Confirme se o back-end está disponível em ${API_URL}.`
+          ? `Não foi possível conectar à API. Confirme se o back-end está rodando em ${API_URL || window.location.origin}.`
           : err.message || "Ocorreu um erro inesperado durante o processamento."
       );
     } finally {

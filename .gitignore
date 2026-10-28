@@ -27,3 +27,6 @@ __pycache__/
 node_modules/
 frontend-calibra/dist/
 .env
+
+# Build do front-end (gerado pelo infra/deploy.ps1)
+frontend-calibra/dist/
