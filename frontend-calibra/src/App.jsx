@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
+  Download,
   FileSpreadsheet,
   Gauge,
   RotateCcw,
@@ -40,6 +41,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+  const [downloading, setDownloading] = useState(false);
 
   function chooseFile(nextFile) {
     setError("");
@@ -106,6 +108,50 @@ export default function App() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function downloadCertificate() {
+    if (!file || downloading) return;
+
+    setDownloading(true);
+    setError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(
+        `${API_URL}/api/v1/calibrations/certificate`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        let body = {};
+        try {
+          body = await response.json();
+        } catch {
+          body = {};
+        }
+        throw new Error(getErrorMessage(response, body));
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "certificado-calibracao.pdf";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message || "Não foi possível gerar o certificado em PDF.");
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -330,16 +376,27 @@ export default function App() {
                 </div>
                 <h2>Resumo da análise</h2>
               </div>
-              <div
-                className={`verdict-pill ${approved ? "verdict-approved" : "verdict-rejected"
-                  }`}
-              >
-                {approved ? (
-                  <CheckCircle2 size={17} />
-                ) : (
-                  <XCircle size={17} />
-                )}
-                {result.parecer_final || "PARECER NÃO INFORMADO"}
+              <div className="results-actions">
+                <button
+                  className="button button-ghost"
+                  type="button"
+                  onClick={downloadCertificate}
+                  disabled={downloading}
+                >
+                  <Download size={16} />
+                  {downloading ? "Gerando PDF..." : "Baixar certificado (PDF)"}
+                </button>
+                <div
+                  className={`verdict-pill ${approved ? "verdict-approved" : "verdict-rejected"
+                    }`}
+                >
+                  {approved ? (
+                    <CheckCircle2 size={17} />
+                  ) : (
+                    <XCircle size={17} />
+                  )}
+                  {result.parecer_final || "PARECER NÃO INFORMADO"}
+                </div>
               </div>
             </div>
 

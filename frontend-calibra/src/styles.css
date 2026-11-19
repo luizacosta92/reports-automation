@@ -169,3 +169,5 @@ tbody tr:last-child td { border-bottom: 0; } tbody tr:hover { background: #fbfdf
   .button { padding: 10px 11px; }
   .footer { flex-direction: column; }
 }
+
+.results-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

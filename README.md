@@ -22,13 +22,15 @@ O sistema calcula a média das medições, o erro sistemático e compara o erro 
 - Classificação dos pontos dentro ou fora da tolerância.
 - Geração de parecer final aprovado ou reprovado.
 - Interface web para envio do arquivo e apresentação dos resultados.
+- Certificado em PDF com QR Code e página de validação por token assinado.
+- Script `iniciar_aplicacao_schulz.bat` para instalar e executar tudo no Windows.
 - Endpoint de saúde para verificar se a API está funcionando.
 - Testes automatizados para o domínio metrológico e a leitura de planilhas.
 
 ## Tecnologias Utilizadas
 
 **Backend**
-- Python 3.11 ou superior
+- Python 3.10 ou superior
 - FastAPI
 - OpenPyXL
 - Pytest
@@ -98,10 +100,49 @@ reports-automation/
 
 ## Requisitos
 
-- Python 3.11 ou superior.
-- Node.js e npm.
+- Python 3.10 ou superior.
+- Node.js e npm (apenas para desenvolver a interface; o `.bat` não precisa).
 - Navegador atualizado.
 - Planilha Excel no formato `.xlsx`.
+
+## Início rápido (Windows)
+
+Para executar a aplicação completa com um clique, dê dois cliques em
+`iniciar_aplicacao_schulz.bat`, na raiz do repositório. O script:
+
+1. verifica se o Python 3.10 ou superior está no PATH;
+2. cria e ativa o ambiente virtual `.venv`;
+3. instala as bibliotecas do `requirements.txt`;
+4. inicia a API e abre a interface no navegador em `http://127.0.0.1:8000`.
+
+A interface já compilada fica na pasta `web/`, servida pela própria API, então
+apenas o Python é necessário. Para encerrar, feche a janela da API.
+
+## Certificado em PDF e QR Code
+
+Depois de processar uma planilha, o botão **Baixar certificado (PDF)** gera um
+certificado com os dados do ensaio, o parecer final e um QR Code. O QR Code
+aponta para `/validar?t=<token>`, página que confirma a autenticidade do
+certificado e mostra data de emissão, parecer e resumo. O token é assinado com
+HMAC-SHA256, portanto qualquer alteração nele é detectada, sem necessidade de
+banco de dados.
+
+Variáveis de ambiente opcionais:
+
+- `PUBLIC_BASE_URL`: endereço usado dentro do QR Code (por exemplo, o IP do
+  computador na rede local, para o celular conseguir abrir a validação, ou a URL
+  da API na AWS). Por padrão usa o endereço da requisição.
+- `CERTIFICATE_SECRET`: chave de assinatura do token. Em uso real, defina uma
+  chave própria.
+
+Endpoints: `POST /api/v1/calibrations/certificate` (PDF),
+`GET /api/v1/certificates/validate?t=...` (JSON) e `GET /validar?t=...` (página
+para celular).
+
+## Deploy na nuvem (AWS)
+
+Os scripts de deploy serverless (AWS SAM) ficam na pasta `infra/`. Veja
+`infra/README.md`.
 
 ## Instalação e Execução
 
@@ -308,9 +349,8 @@ Não fazem parte do escopo implementado nesta versão:
 - Persistência em banco de dados.
 - Histórico e auditoria de processamentos.
 - Autenticação e controle de acesso.
-- Geração de certificados em PDF.
 - Desvio padrão e incerteza expandida.
-- Implantação em nuvem com Docker.
+- Persistência dos certificados emitidos (a validação atual usa token assinado, sem banco).
 
 Essas funcionalidades podem ser avaliadas conforme as necessidades futuras do produto e as decisões da equipe.
 

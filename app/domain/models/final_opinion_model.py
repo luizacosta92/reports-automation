@@ -1,6 +1,9 @@
-from enum import StrEnum
+from enum import Enum
 
 
-class FinalOpinionModel(StrEnum):
+class FinalOpinionModel(str, Enum):
     APPROVED = "APROVADO"
     REJECTED = "REPROVADO"
+
+    def __str__(self) -> str:
+        return self.value
